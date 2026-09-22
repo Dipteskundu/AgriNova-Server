@@ -19,28 +19,10 @@ exports.login = async (req, res, next) => {
   }
 };
 
-exports.socialAuth = async (req, res, next) => {
-  try {
-    const result = await authService.socialAuth(req.body);
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-};
-
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await authService.getMe(req.user.id);
-    res.json(user);
-  } catch (error) {
-    next(error);
-  }
-};
-
-exports.updateProfile = async (req, res, next) => {
-  try {
-    const user = await authService.updateProfile(req.user.id, req.body);
-    res.json(user);
+    const result = await authService.getMe(req.user.id);
+    res.json(result);
   } catch (error) {
     next(error);
   }
