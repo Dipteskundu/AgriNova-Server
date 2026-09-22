@@ -1,16 +1,9 @@
 require("dotenv").config();
 const app = require("./app");
-const connectDB = require("./config/db");
-const autoSeed = require("./database/seed/autoSeed");
 
-async function start() {
-  await connectDB();
-  await autoSeed();
+// DB connect + auto-seed run in app.js bootstrap (serverless-safe, cached).
+const PORT = process.env.PORT || 5000;
 
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-  });
-}
-
-start();
+app.listen(PORT, () => {
+  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+});

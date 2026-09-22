@@ -1,14 +1,29 @@
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 const connectDB = require("./config/db");
+const autoSeed = require("./database/seed/autoSeed");
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
-// Connect to MongoDB (cached globally for serverless)
-connectDB();
+// Serverless bootstrap: connect DB + seed demo users once per warm instance.
+// Retries on the next invocation if it fails.
+async function bootstrap() {
+  if (global._bootstrapped) return;
+  global._bootstrapped = true;
+  try {
+    await connectDB();
+    await autoSeed();
+  } catch (error) {
+    global._bootstrapped = false;
+    console.error("Bootstrap failed:", error.message);
+  }
+}
 
-// CORS - support multiple origins via comma-separated CLIENT_URL
+bootstrap();
+
+// CORS - support multiple origins via comma-separated CLIENT_URL / FRONTEND_URL
 const allowedOrigins = (process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:3000")
   .split(",")
   .map((o) => o.trim())
@@ -21,7 +36,8 @@ app.use(
       if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      callback(new Error("Not allowed by CORS"));
+      // No CORS headers for disallowed origins (browser blocks the request)
+      callback(null, false);
     },
     credentials: true,
   })
@@ -37,14 +53,21 @@ if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
-// Health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
+// Health check (local connection state only — no DB roundtrip)
+const healthHandler = (req, res) => {
+  res.json({
+    status: "ok",
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    timestamp: new Date().toISOString(),
+  });
+};
+
+app.get("/api/health", healthHandler);
+app.get("/health", healthHandler);
 
 // Routes
 app.use("/api/auth", require("./modules/auth/auth.routes"));
-// app.use("/api/users", require("./modules/users/users.routes"));
+app.use("/api/users", require("./modules/users/users.routes"));
 // app.use("/api/farms", require("./modules/farms/farms.routes"));
 // app.use("/api/fields", require("./modules/fields/fields.routes"));
 // app.use("/api/crops", require("./modules/crops/crops.routes"));
