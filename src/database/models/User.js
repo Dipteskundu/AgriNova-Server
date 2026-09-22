@@ -16,14 +16,23 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Please add a password"],
       minlength: 6,
       select: false,
     },
-    role: {
+    firebaseUid: {
       type: String,
+      sparse: true,
+    },
+    roles: {
+      type: [String],
       enum: ["farmer", "buyer", "supplier", "inspector", "logistics", "support", "admin"],
-      default: "farmer",
+      default: ["farmer"],
+      validate: {
+        validator: function (v) {
+          return v.length > 0;
+        },
+        message: "At least one role is required",
+      },
     },
     phone: {
       type: String,
@@ -45,14 +54,16 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) {
-    next();
+  if (!this.isModified("password") || !this.password) {
+    return next();
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
+  next();
 });
 
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
 

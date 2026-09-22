@@ -1,27 +1,49 @@
 const express = require("express");
 const cors = require("cors");
-const morgan = require("morgan");
 const connectDB = require("./config/db");
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
-// Connect to MongoDB
+// Connect to MongoDB (cached globally for serverless)
 connectDB();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
+// CORS - support multiple origins via comma-separated CLIENT_URL
+const allowedOrigins = (process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
+// Body parsing with size limits
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+// Logging - skip in production for serverless
+if (process.env.NODE_ENV !== "production") {
+  const morgan = require("morgan");
+  app.use(morgan("dev"));
+}
 
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Routes will be imported here
-// app.use("/api/auth", require("./modules/auth/auth.routes"));
+// Routes
+app.use("/api/auth", require("./modules/auth/auth.routes"));
 // app.use("/api/users", require("./modules/users/users.routes"));
 // app.use("/api/farms", require("./modules/farms/farms.routes"));
 // app.use("/api/fields", require("./modules/fields/fields.routes"));

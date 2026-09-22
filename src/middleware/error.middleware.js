@@ -1,4 +1,9 @@
 const errorHandler = (err, req, res, next) => {
+  // If headers already sent, delegate to default Express handler
+  if (res.headersSent) {
+    return next(err);
+  }
+
   let error = { ...err };
   error.message = err.message;
 
@@ -20,6 +25,13 @@ const errorHandler = (err, req, res, next) => {
   if (err.name === "ValidationError") {
     error.message = Object.values(err.errors).map((val) => val.message);
     return res.status(400).json({ message: error.message });
+  }
+
+  // Custom AppError with statusCode
+  if (err.statusCode) {
+    return res.status(err.statusCode).json({
+      message: error.message,
+    });
   }
 
   res.status(error.statusCode || 500).json({
