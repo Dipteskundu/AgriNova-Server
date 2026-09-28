@@ -21,8 +21,17 @@ exports.login = async (req, res, next) => {
 
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await authService.getMe(req.user.id);
-    res.json(user);
+    const result = await authService.getMe(req.user.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.socialAuth = async (req, res, next) => {
+  try {
+    const result = await authService.socialAuth(req.body);
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }

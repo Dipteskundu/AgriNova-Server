@@ -1,45 +1,22 @@
 const mongoose = require("mongoose");
 
-const deliverySchema = new mongoose.Schema(
+const logisticsSchema = new mongoose.Schema(
   {
-    order: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
-      required: true,
-    },
-    logisticsPartner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    pickupAddress: {
-      type: String,
-      required: true,
-    },
-    deliveryAddress: {
-      type: String,
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: ["pending", "picked_up", "in_transit", "delivered", "confirmed"],
-      default: "pending",
-    },
-    pickupDate: {
-      type: Date,
-    },
-    deliveryDate: {
-      type: Date,
-    },
-    trackingNumber: {
-      type: String,
-    },
-    notes: {
-      type: String,
-    },
+    consignmentCode: { type: String, required: [true, "Please add a consignment code"], trim: true },
+    originHub: { type: String, default: "" },
+    destinationDepot: { type: String, default: "" },
+    cargoDescription: { type: String, default: "" },
+    cargoWeightKg: { type: Number, default: 0 },
+    vehicleType: { type: String, default: "Open Bed Truck" },
+    driverName: { type: String, default: "" },
+    driverPhone: { type: String, default: "" },
+    temperatureCelsius: { type: Number, default: 0 },
+    targetTempRange: { type: String, default: "" },
+    transitStatus: { type: String, default: "Dispatched" },
+    estimatedArrival: { type: String, default: "" },
+    coldChainIntegrity: { type: String, default: "Optimal" },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-module.exports = mongoose.model("Delivery", deliverySchema);
+module.exports = mongoose.model("Delivery", logisticsSchema);

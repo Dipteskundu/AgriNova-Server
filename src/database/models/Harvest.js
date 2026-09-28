@@ -2,57 +2,22 @@ const mongoose = require("mongoose");
 
 const harvestSchema = new mongoose.Schema(
   {
-    farmer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    cropCycle: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "CropCycle",
-      required: true,
-    },
-    crop: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Crop",
-      required: true,
-    },
-    quantity: {
-      type: Number,
-      required: [true, "Please add quantity"],
-    },
-    unit: {
-      type: String,
-      default: "kg",
-    },
-    harvestDate: {
-      type: Date,
-      default: Date.now,
-    },
-    qualityGrade: {
-      type: String,
-      enum: ["A+", "A", "B+", "B", "C"],
-    },
-    pricePerUnit: {
-      type: Number,
-    },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-    isListed: {
-      type: Boolean,
-      default: false,
-    },
-    status: {
-      type: String,
-      enum: ["harvested", "verified", "listed", "sold"],
-      default: "harvested",
-    },
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    cropBatchId: { type: String, default: "" },
+    cropName: { type: String, default: "" },
+    variety: { type: String, default: "" },
+    fieldName: { type: String, default: "" },
+    harvestDate: { type: String, default: "" },
+    quantityKg: { type: Number, required: [true, "Please add quantity"], min: 0 },
+    qualityGrade: { type: String, default: "Grade A" },
+    moisturePercentage: { type: Number, default: 0 },
+    storageLocation: { type: String, default: "" },
+    batchCode: { type: String, default: "" },
+    storageCondition: { type: String, default: "Ambient Warehouse" },
+    marketReadiness: { type: String, default: "Ready for Sale" },
+    estimatedValuationBdt: { type: Number, default: 0 },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Harvest", harvestSchema);

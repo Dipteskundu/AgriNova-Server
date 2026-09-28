@@ -1,47 +1,22 @@
 const mongoose = require("mongoose");
 
-const qualityRequestSchema = new mongoose.Schema(
+const qualityReportSchema = new mongoose.Schema(
   {
-    farmer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    harvest: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Harvest",
-      required: true,
-    },
-    inspector: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    requestDate: {
-      type: Date,
-      default: Date.now,
-    },
-    inspectionDate: {
-      type: Date,
-    },
-    status: {
-      type: String,
-      enum: ["pending", "assigned", "inspecting", "completed"],
-      default: "pending",
-    },
-    grade: {
-      type: String,
-      enum: ["A+", "A", "B+", "B", "C"],
-    },
-    report: {
-      type: String,
-    },
-    notes: {
-      type: String,
-    },
+    batchCode: { type: String, required: [true, "Please add a batch code"], trim: true },
+    produceType: { type: String, default: "" },
+    farmerName: { type: String, default: "" },
+    testingLabLocation: { type: String, default: "" },
+    inspectorName: { type: String, default: "" },
+    assignedGrade: { type: String, default: "Grade A" },
+    moistureContentPercent: { type: Number, default: 0 },
+    moistureStandardThreshold: { type: Number, default: 0 },
+    foreignMatterPercent: { type: Number, default: 0 },
+    aflatoxinPpm: { type: Number, default: 0 },
+    complianceVerdict: { type: String, default: "Passed" },
+    inspectionDate: { type: String, default: "" },
+    certificateNumber: { type: String, default: "" },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-module.exports = mongoose.model("QualityRequest", qualityRequestSchema);
+module.exports = mongoose.model("QualityRequest", qualityReportSchema);
