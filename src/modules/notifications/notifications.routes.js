@@ -34,9 +34,25 @@ const markRead = async (req, res, next) => {
   }
 };
 
+/**
+ * Every authenticated portal may read its own notifications. The CRUD router
+ * scopes reads/writes by `ownerKey: "owner"`, so widening the role list here
+ * cannot leak one user's notifications to another — it only stops
+ * buyer/supplier/inspector/logistics/support from getting a blanket 403.
+ */
+const ALL_PORTAL_ROLES = [
+  "farmer",
+  "buyer",
+  "supplier",
+  "inspector",
+  "logistics",
+  "support",
+  "admin",
+];
+
 const base = buildCrudRouter({
   model: Notification,
-  roles: ["farmer", "admin"],
+  roles: ALL_PORTAL_ROLES,
   ownerKey: "owner",
   map: mapNotification,
   prepareCreate: () => ({ timestamp: nowStamp() }),

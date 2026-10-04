@@ -7,6 +7,9 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/database/seed/index.js",
+    "seed:marketplace": "node src/database/seed/marketplace.seed.js",
+    "seed:quality": "node src/database/seed/quality.seed.js",
+    "seed:inputs": "node src/database/seed/inputs.seed.js",
     "lint": "eslint src/"
   },
   "dependencies": {

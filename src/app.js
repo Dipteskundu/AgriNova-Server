@@ -40,6 +40,20 @@ app.use("/api/expenses", require("./modules/expenses/expenses.routes"));
 app.use("/api/notifications", require("./modules/notifications/notifications.routes"));
 app.use("/api/training", require("./modules/training/training.routes"));
 app.use("/api/admin", require("./modules/admin/admin.routes"));
+app.use("/api/marketplace", require("./modules/marketplace/marketplace.routes"));
+// The demand board's reads are public (`/marketplace/demands` has no
+// RouteGuard); optionalAuth attaches a caller when a token is present so
+// `?mine=1` can still resolve, and never rejects. Writes re-check via `auth`.
+app.use(
+  "/api/demands",
+  require("./middleware/optionalAuth.middleware"),
+  require("./modules/demands/demands.routes")
+);
+app.use("/api/orders", require("./modules/orders/orders.routes"));
+app.use("/api/payments", require("./modules/payments/payments.routes"));
+app.use("/api/deliveries", require("./modules/deliveries/deliveries.routes"));
+app.use("/api/products", require("./modules/products/products.routes"));
+app.use("/api/quality", require("./modules/quality/quality.routes"));
 
 // Error handling middleware
 app.use(errorHandler);

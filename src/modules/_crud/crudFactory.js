@@ -62,9 +62,21 @@ function buildCrudRouter(options) {
     return base;
   };
 
+  /**
+   * `ownerKey` may be populated (a `supplier` loaded as a User document, say),
+   * in which case `String(doc[ownerKey])` renders the document rather than its
+   * id and every owner check fails with a 403. Resolve through `_id` first so
+   * populated and raw references compare the same way.
+   */
+  const ownerId = (value) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") return String(value._id !== undefined ? value._id : value);
+    return String(value);
+  };
+
   const canAccess = (req, doc) => {
     if (isAdmin(req.user) || !ownerKey) return true;
-    return !!(doc[ownerKey] && String(doc[ownerKey]) === String(req.user.id));
+    return ownerId(doc[ownerKey]) === String(req.user.id);
   };
 
   const load = async (req) => {
