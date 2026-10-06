@@ -1,16 +1,15 @@
 # AgriNova Backend
 
-Node.js + Express backend for the AgriNova Smart Agriculture & Farm-to-Market Platform, deployable to Vercel as a serverless function.
+Node.js + Express backend for the AgriNova Smart Agriculture & Farm-to-Market Platform.
 
 ## Tech Stack
 
 - **Runtime:** Node.js 18+
 - **Framework:** Express.js 4+
-- **Database:** MongoDB with Mongoose (Atlas recommended for production)
+- **Database:** MongoDB with Mongoose
 - **Authentication:** JWT (JSON Web Tokens)
 - **Validation:** Express Validator
-- **File Upload:** Multer (memory storage) + Cloudinary
-- **Deployment:** Vercel serverless
+- **File Upload:** Multer
 
 ## Prerequisites
 
@@ -27,7 +26,7 @@ npm install
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in values:
+Create a `.env` file in the root directory:
 
 ```env
 PORT=5000
@@ -40,13 +39,8 @@ MONGODB_URI=mongodb://localhost:27017/agrinova
 JWT_SECRET=your_jwt_secret_here
 JWT_EXPIRE=30d
 
-# Frontend URL (comma-separated for multiple origins)
+# Frontend URL
 FRONTEND_URL=http://localhost:3000
-
-# Cloudinary (file uploads)
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
 
 # External Services (optional)
 WEATHER_API_KEY=your_weather_api_key
@@ -60,77 +54,138 @@ CLOUD_STORAGE_BUCKET=your_cloud_storage_bucket
 ```bash
 npm run dev      # Start development server with nodemon
 npm run start    # Start production server
-npm run seed     # Seed database with initial data (DELETES all users first)
+npm run seed     # Seed database with initial data
 npm run lint     # Run ESLint
 ```
 
 ## Project Structure
 
 ```
-api/
-└── index.js                 # Vercel serverless entry (exports Express app)
-
 src/
-├── config/
-│   ├── db.js                # MongoDB connection (cached for serverless)
-│   ├── cloudinary.js        # Cloudinary config
-│   ├── roles.js             # Role / portal definitions
-│   └── services.js          # External service keys
+├── config/                 # Configuration
+│   ├── db.js              # MongoDB connection
+│   ├── env.js             # Environment variables
+│   └── services.js        # External service configs
 │
-├── modules/
-│   ├── auth/                # register / login / me
+├── modules/                # Feature Modules
+│   ├── auth/              # Authentication
 │   │   ├── auth.controller.js
 │   │   ├── auth.service.js
 │   │   ├── auth.routes.js
 │   │   └── auth.validation.js
-│   └── users/               # profile / avatar
-│       ├── users.controller.js
-│       ├── users.service.js
-│       └── users.routes.js
+│   │
+│   ├── users/             # User management
+│   ├── farms/             # Farm management
+│   ├── fields/            # Field management
+│   ├── crops/             # Crop management
+│   ├── crop-cycles/       # Crop cycle tracking
+│   ├── harvest/           # Harvest management
+│   ├── quality/           # Quality verification
+│   ├── marketplace/       # Marketplace
+│   ├── demands/           # Demand board
+│   ├── matching/          # Farmer-buyer matching
+│   ├── orders/            # Orders
+│   ├── payments/          # Payments
+│   ├── deliveries/        # Deliveries
+│   ├── expenses/          # Expense tracking
+│   ├── notifications/     # Notifications
+│   ├── weather/           # Weather integration
+│   ├── recommendations/   # Crop recommendations
+│   ├── ai-assistant/      # AI Assistant
+│   └── admin/             # Admin operations
 │
-├── middleware/
-│   ├── auth.middleware.js    # JWT authentication
-│   ├── role.middleware.js    # Role-based access
-│   ├── error.middleware.js   # Error handling
-│   ├── upload.middleware.js  # Multer memory upload
-│   └── validate.middleware.js
+├── middleware/             # Middleware
+│   ├── auth.middleware.js  # JWT authentication
+│   ├── role.middleware.js  # Role-based access
+│   ├── error.middleware.js # Error handling
+│   └── upload.middleware.js # File uploads
 │
-├── database/
-│   ├── models/              # Mongoose models (User, Farm, Order, ...)
-│   └── seed/
-│       ├── autoSeed.js      # Seeds demo users when collection is empty
-│       ├── demoUsers.js
-│       └── index.js         # Manual full reseed (destructive)
+├── database/               # Database
+│   ├── models/            # Mongoose models
+│   ├── indexes/           # Database indexes
+│   └── seed/              # Seed data
 │
-├── utils/
-│   └── AppError.js
+├── integrations/          # External Services
+│   ├── ai/                # AI API integration
+│   ├── weather/           # Weather API
+│   ├── payment/           # Payment gateway
+│   ├── storage/           # Cloud storage
+│   └── agricultural-data/ # Government datasets
 │
-├── app.js                   # Express app setup (+ serverless bootstrap)
-└── server.js                # Local server entry point
+├── utils/                 # Utilities
+├── types/                 # Type definitions
+├── constants/             # Constants
+├── app.js                 # Express app setup
+└── server.js              # Server entry point
 ```
 
 ## API Endpoints
 
-### Health
-```
-GET    /api/health           # Health check (alias: GET /health)
-```
-
 ### Authentication
 ```
-POST   /api/auth/register    # Register new user (roles: farmer, buyer, supplier)
-POST   /api/auth/login       # Login user
-GET    /api/auth/me          # Get current user (Bearer token)
+POST   /api/auth/register     # Register new user
+POST   /api/auth/login        # Login user
+GET    /api/auth/me           # Get current user
 ```
 
-### Users
+### Farms
 ```
-GET    /api/users/profile     # Get profile (Bearer token)
-PUT    /api/users/profile     # Update profile (Bearer token)
-POST   /api/users/avatar      # Upload avatar image, field: "avatar" (Bearer token)
+GET    /api/farms             # Get all farms
+POST   /api/farms             # Create farm
+GET    /api/farms/:id         # Get farm by ID
+PUT    /api/farms/:id         # Update farm
+DELETE /api/farms/:id         # Delete farm
 ```
 
-> Other modules (farms, fields, crops, marketplace, orders, ...) are planned; routes exist as placeholders in `src/app.js` but are not mounted yet.
+### Fields
+```
+GET    /api/fields            # Get all fields
+POST   /api/fields            # Create field
+GET    /api/fields/:id        # Get field by ID
+PUT    /api/fields/:id        # Update field
+DELETE /api/fields/:id        # Delete field
+```
+
+### Crops
+```
+GET    /api/crops             # Get all crops
+POST   /api/crops/recommend   # Get recommendations
+GET    /api/crops/:id         # Get crop by ID
+```
+
+### Harvest
+```
+GET    /api/harvest           # Get all harvests
+POST   /api/harvest           # Create harvest lot
+GET    /api/harvest/:id       # Get harvest by ID
+```
+
+### Orders
+```
+GET    /api/orders            # Get all orders
+POST   /api/orders            # Create order
+GET    /api/orders/:id        # Get order by ID
+PUT    /api/orders/:id/status # Update order status
+```
+
+### Marketplace
+```
+GET    /api/marketplace/inputs   # Get input products
+GET    /api/marketplace/produce  # Get produce listings
+POST   /api/marketplace/produce  # Create listing
+```
+
+### Demands
+```
+GET    /api/demands           # Get all demands
+POST   /api/demands           # Create demand
+GET    /api/demands/:id       # Get demand by ID
+```
+
+### Weather
+```
+GET    /api/weather           # Get weather data
+```
 
 ## Middleware
 
@@ -167,7 +222,7 @@ router.get("/farmer-or-buyer", auth, role(["farmer", "buyer"]), controller.metho
 - **Order** - Orders
 - **Payment** - Payments
 - **Delivery** - Deliveries
-- **Expense** - Expense tracking
+- **Expense** - Expenses
 - **Notification** - Notifications
 
 ## Error Handling
@@ -185,45 +240,10 @@ Status codes:
 - `401` - Unauthorized
 - `403` - Forbidden
 - `404` - Not Found
-- `409` - Conflict
 - `500` - Server Error
-
-## Deploy to Vercel
-
-The backend is a standalone repo (`api/index.js` exports the Express app; `vercel.json` rewrites `/api/*` and `/health` to it).
-
-1. **Import the repo** into Vercel (Root Directory: repo root).
-
-2. **Set environment variables** in *Project Settings → Environment Variables* (the local `.env` file is gitignored and never uploaded):
-
-   | Variable | Required | Notes |
-   |---|---|---|
-   | `MONGODB_URI` | yes | MongoDB Atlas connection string |
-   | `JWT_SECRET` | yes | Strong random secret |
-   | `JWT_EXPIRE` | yes | e.g. `30d` |
-   | `FRONTEND_URL` | yes | Deployed frontend origin(s), comma-separated (e.g. `https://app.vercel.app`) — used for CORS |
-   | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | for avatar upload | Cloudinary credentials |
-
-   `NODE_ENV` is set to `production` by Vercel automatically.
-
-3. **MongoDB Atlas → Network Access:** allow `0.0.0.0/0` (or Vercel's IP ranges). Skipping this is the most common cause of cold-start 500s.
-
-4. **Deploy**, then smoke test:
-   ```
-   GET  /health                    → 200 { "status": "ok", "db": "connected" }
-   POST /api/auth/register         → 201
-   POST /api/auth/login            → 200 { token, user }
-   GET  /api/auth/me               → 200 (Authorization: Bearer <token>)
-   GET  /api/users/profile         → 200 (Authorization: Bearer <token>)
-   ```
-
-5. **Seeding:** on first cold start the server runs `autoSeed`, which creates demo users (`farmer@demo.com`, etc., password `demo123`) **only when the users collection is empty**. It never overwrites existing users. For a full destructive reseed, run `npm run seed` locally against Atlas.
-
-6. **Frontend:** set `NEXT_PUBLIC_API_URL=https://<backend>.vercel.app/api`.
 
 ## Learn More
 
 - [Express.js Documentation](https://expressjs.com/)
 - [Mongoose Documentation](https://mongoosejs.com/)
-- [MongoDB Documentation](https://www.mongodb.com/docs/)
-- [Vercel - Express.js](https://vercel.com/docs/frameworks/express)
+- [MongoDB Documentation](https://docs.mongodb.com/)

@@ -1,45 +1,39 @@
 const mongoose = require("mongoose");
 
-const deliverySchema = new mongoose.Schema(
+/**
+ * Delivery / consignment.
+ *
+ * Flat fields read by `admin.mappers.js`: `consignmentCode`, `originHub`,
+ * `destinationDepot`, `cargoDescription`, `cargoWeightKg`, `vehicleType`,
+ * `driverName`, `driverPhone`, `temperatureCelsius`, `targetTempRange`,
+ * `transitStatus`, `estimatedArrival`, `coldChainIntegrity`. Do not rename.
+ *
+ * `owner` is additive and links a consignment to the buyer who ordered it,
+ * so the buyer portal can show only their own shipments.
+ */
+const logisticsSchema = new mongoose.Schema(
   {
-    order: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
-      required: true,
-    },
-    logisticsPartner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    pickupAddress: {
-      type: String,
-      required: true,
-    },
-    deliveryAddress: {
-      type: String,
-      required: true,
-    },
-    status: {
-      type: String,
-      enum: ["pending", "picked_up", "in_transit", "delivered", "confirmed"],
-      default: "pending",
-    },
-    pickupDate: {
-      type: Date,
-    },
-    deliveryDate: {
-      type: Date,
-    },
-    trackingNumber: {
-      type: String,
-    },
-    notes: {
-      type: String,
-    },
+    consignmentCode: { type: String, required: [true, "Please add a consignment code"], trim: true },
+    originHub: { type: String, default: "" },
+    destinationDepot: { type: String, default: "" },
+    cargoDescription: { type: String, default: "" },
+    cargoWeightKg: { type: Number, default: 0 },
+    vehicleType: { type: String, default: "Open Bed Truck" },
+    driverName: { type: String, default: "" },
+    driverPhone: { type: String, default: "" },
+    temperatureCelsius: { type: Number, default: 0 },
+    targetTempRange: { type: String, default: "" },
+    transitStatus: { type: String, default: "Dispatched" },
+    estimatedArrival: { type: String, default: "" },
+    coldChainIntegrity: { type: String, default: "Optimal" },
+
+    // ── buyer portal (additive) ────────────────────────────────
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    orderCode: { type: String, default: "" },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-module.exports = mongoose.model("Delivery", deliverySchema);
+logisticsSchema.index({ owner: 1, transitStatus: 1 });
+
+module.exports = mongoose.model("Delivery", logisticsSchema);

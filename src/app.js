@@ -1,88 +1,71 @@
 const express = require("express");
 const cors = require("cors");
+const morgan = require("morgan");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
 const connectDB = require("./config/db");
-const autoSeed = require("./database/seed/autoSeed");
 const errorHandler = require("./middleware/error.middleware");
 
 const app = express();
 
-// Serverless bootstrap: connect DB + seed demo users once per warm instance.
-// Retries on the next invocation if it fails.
-async function bootstrap() {
-  if (global._bootstrapped) return;
-  global._bootstrapped = true;
-  try {
-    await connectDB();
-    await autoSeed();
-  } catch (error) {
-    global._bootstrapped = false;
-    console.error("Bootstrap failed:", error.message);
-  }
-}
+// Connect to MongoDB (retries in the background, never crashes the server)
+connectDB();
 
-bootstrap();
+// Produce photos uploaded via POST /api/marketplace/upload land in `uploads/`
+// (multer's relative destination, so it resolves against the process cwd).
+// Create it on boot: a missing directory makes multer fail with ENOENT on the
+// very first upload. Served from this origin so `<img src>` can use the
+// absolute URL the upload route returns.
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+app.use("/uploads", express.static(uploadDir));
 
-// CORS - support multiple origins via comma-separated CLIENT_URL / FRONTEND_URL
-const allowedOrigins = (process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:3000")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      // No CORS headers for disallowed origins (browser blocks the request)
-      callback(null, false);
-    },
-    credentials: true,
-  })
-);
-
-// Body parsing with size limits
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
-
-// Logging - skip in production for serverless
-if (process.env.NODE_ENV !== "production") {
-  const morgan = require("morgan");
-  app.use(morgan("dev"));
-}
-
-// Health check (local connection state only — no DB roundtrip)
-const healthHandler = (req, res) => {
+// Health check
+app.get("/api/health", (req, res) => {
+  const dbStates = ["disconnected", "connected", "connecting", "disconnecting"];
+  const db = dbStates[mongoose.connection.readyState] || "unknown";
   res.json({
     status: "ok",
-    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    db,
     timestamp: new Date().toISOString(),
   });
-};
-
-app.get("/api/health", healthHandler);
-app.get("/health", healthHandler);
+});
 
 // Routes
 app.use("/api/auth", require("./modules/auth/auth.routes"));
-app.use("/api/users", require("./modules/users/users.routes"));
-// app.use("/api/farms", require("./modules/farms/farms.routes"));
-// app.use("/api/fields", require("./modules/fields/fields.routes"));
-// app.use("/api/crops", require("./modules/crops/crops.routes"));
-// app.use("/api/crop-cycles", require("./modules/crop-cycles/crop-cycles.routes"));
-// app.use("/api/harvest", require("./modules/harvest/harvest.routes"));
-// app.use("/api/quality", require("./modules/quality/quality.routes"));
-// app.use("/api/marketplace", require("./modules/marketplace/marketplace.routes"));
-// app.use("/api/demands", require("./modules/demands/demands.routes"));
-// app.use("/api/orders", require("./modules/orders/orders.routes"));
-// app.use("/api/payments", require("./modules/payments/payments.routes"));
-// app.use("/api/deliveries", require("./modules/deliveries/deliveries.routes"));
-// app.use("/api/expenses", require("./modules/expenses/expenses.routes"));
-// app.use("/api/weather", require("./modules/weather/weather.routes"));
-// app.use("/api/ai-assistant", require("./modules/ai-assistant/ai-assistant.routes"));
-// app.use("/api/admin", require("./modules/admin/admin.routes"));
+app.use("/api/farmer", require("./modules/farmer/farmer.routes"));
+app.use("/api/farms", require("./modules/farms/farms.routes"));
+app.use("/api/fields", require("./modules/fields/fields.routes"));
+app.use("/api/crop-batches", require("./modules/crop-batches/crop-batches.routes"));
+app.use("/api/crop-logs", require("./modules/crop-logs/crop-logs.routes"));
+app.use("/api/calendar", require("./modules/calendar/calendar.routes"));
+app.use("/api/harvests", require("./modules/harvests/harvests.routes"));
+app.use("/api/expenses", require("./modules/expenses/expenses.routes"));
+app.use("/api/notifications", require("./modules/notifications/notifications.routes"));
+app.use("/api/training", require("./modules/training/training.routes"));
+app.use("/api/admin", require("./modules/admin/admin.routes"));
+app.use("/api/marketplace", require("./modules/marketplace/marketplace.routes"));
+// The demand board's reads are public (`/marketplace/demands` has no
+// RouteGuard); optionalAuth attaches a caller when a token is present so
+// `?mine=1` can still resolve, and never rejects. Writes re-check via `auth`.
+app.use(
+  "/api/demands",
+  require("./middleware/optionalAuth.middleware"),
+  require("./modules/demands/demands.routes")
+);
+app.use("/api/orders", require("./modules/orders/orders.routes"));
+app.use("/api/payments", require("./modules/payments/payments.routes"));
+app.use("/api/wallet", require("./modules/wallet/wallet.routes"));
+app.use("/api/deliveries", require("./modules/deliveries/deliveries.routes"));
+app.use("/api/products", require("./modules/products/products.routes"));
+app.use("/api/quality", require("./modules/quality/quality.routes"));
 
 // Error handling middleware
 app.use(errorHandler);

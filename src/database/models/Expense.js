@@ -1,41 +1,18 @@
-// Placeholder for expense model
 const mongoose = require("mongoose");
 
 const expenseSchema = new mongoose.Schema(
   {
-    farmer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    farm: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Farm",
-    },
-    cropCycle: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "CropCycle",
-    },
-    category: {
-      type: String,
-      enum: ["seeds", "fertilizer", "pesticide", "labor", "irrigation", "tools", "other"],
-      required: true,
-    },
-    amount: {
-      type: Number,
-      required: true,
-    },
-    description: {
-      type: String,
-    },
-    date: {
-      type: Date,
-      default: Date.now,
-    },
+    owner: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    date: { type: String, default: "" },
+    category: { type: String, required: [true, "Please add an expense category"] },
+    fieldOrFarm: { type: String, default: "" },
+    cropName: { type: String, default: "" },
+    description: { type: String, default: "" },
+    amountBdt: { type: Number, required: [true, "Please add an amount"], min: 0 },
+    paymentMethod: { type: String, default: "Cash" },
+    receiptReference: { type: String, default: "" },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model("Expense", expenseSchema);

@@ -1,23 +1,20 @@
-const role = (allowedRoles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+const role = (roles) => (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
-    const userRoles = req.user.roles;
+  const granted = Array.isArray(req.user.roles) && req.user.roles.length > 0
+    ? req.user.roles
+    : [req.user.role].filter(Boolean);
 
-    if (!userRoles || !Array.isArray(userRoles)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+  const allowed = Array.isArray(roles) ? roles : [roles];
+  const hasRole = allowed.some((r) => granted.includes(r));
 
-    const hasAccess = userRoles.some((r) => allowedRoles.includes(r));
+  if (!hasRole) {
+    return res.status(403).json({ message: "Access denied" });
+  }
 
-    if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    next();
-  };
+  next();
 };
 
 module.exports = role;

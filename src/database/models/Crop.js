@@ -1,45 +1,21 @@
 const mongoose = require("mongoose");
 
-const cropSchema = new mongoose.Schema(
+const masterCropSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: [true, "Please add crop name"],
-      trim: true,
-    },
-    scientificName: {
-      type: String,
-    },
-    category: {
-      type: String,
-      enum: ["cereal", "vegetable", "fruit", "pulse", "oilseed", "fiber", "spice"],
-      required: true,
-    },
-    growingSeason: [
-      {
-        type: String,
-        enum: ["spring", "summer", "autumn", "winter"],
-      },
-    ],
-    growthDuration: {
-      type: Number, // days
-      required: true,
-    },
-    idealTemperature: {
-      min: Number,
-      max: Number,
-    },
-    waterRequirement: {
-      type: String,
-      enum: ["low", "medium", "high"],
-    },
-    description: {
-      type: String,
-    },
+    cropName: { type: String, required: [true, "Please add a crop name"], trim: true },
+    scientificName: { type: String, default: "" },
+    category: { type: String, default: "Cereal" },
+    recommendedSeason: { type: String, default: "" },
+    optimalSoilPhRange: { type: String, default: "" },
+    minRainfallMm: { type: Number, default: 0 },
+    maxRainfallMm: { type: Number, default: 0 },
+    averageMaturityDays: { type: Number, default: 0 },
+    standardYieldKgPerAcre: { type: Number, default: 0 },
+    benchmarkPriceBdtPerKg: { type: Number, default: 0 },
+    approvedVarieties: { type: [String], default: [] },
+    pestVulnerabilities: { type: [String], default: [] },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-module.exports = mongoose.model("Crop", cropSchema);
+module.exports = mongoose.model("Crop", masterCropSchema);
