@@ -54,6 +54,7 @@ CLOUD_STORAGE_BUCKET=your_cloud_storage_bucket
 ```bash
 npm run dev      # Start development server with nodemon
 npm run start    # Start production server
+npm run db:start # Start local MongoDB (portable server in <workspace>/.mongo)
 npm run seed     # Seed database with initial data
 npm run lint     # Run ESLint
 ```

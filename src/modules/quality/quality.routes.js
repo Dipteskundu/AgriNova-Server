@@ -11,7 +11,7 @@ const {
   mapScheduleEntry,
 } = require("../../utils/domainMaps");
 const { logAudit } = require("../../utils/audit");
-const { today, dateOnly } = require("../../utils/dates");
+const { today } = require("../../utils/dates");
 const { assignRules, updateRules, submitRules } = require("./quality.validation");
 
 const STATUSES = ["assigned", "in_progress", "completed", "cancelled"];

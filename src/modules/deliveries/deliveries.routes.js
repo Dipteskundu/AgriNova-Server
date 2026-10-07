@@ -1,4 +1,3 @@
-const express = require("express");
 const { buildCrudRouter } = require("../_crud/crudFactory");
 const Delivery = require("../../database/models/Delivery");
 const { mapBuyerDelivery } = require("../../utils/domainMaps");

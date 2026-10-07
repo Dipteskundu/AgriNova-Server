@@ -10,6 +10,8 @@
     "seed:marketplace": "node src/database/seed/marketplace.seed.js",
     "seed:quality": "node src/database/seed/quality.seed.js",
     "seed:inputs": "node src/database/seed/inputs.seed.js",
+    "migrate:ratings": "node src/database/seed/ratings.migrate.js",
+    "db:start": "node scripts/start-db.js",
     "lint": "eslint src/"
   },
   "dependencies": {

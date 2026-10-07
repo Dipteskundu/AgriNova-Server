@@ -4,7 +4,7 @@ const optionalAuth = require("../../middleware/optionalAuth.middleware");
 const role = require("../../middleware/role.middleware");
 const Product = require("../../database/models/Product");
 const { mapSupplierProduct } = require("../../utils/domainMaps");
-const { validateProduct } = require("./products.validation");
+const { validateProduct, validateRating } = require("./products.validation");
 const { logAudit } = require("../../utils/audit");
 
 const isAdmin = (user) =>
@@ -181,6 +181,146 @@ router.delete("/:id", auth, role(["supplier", "admin"]), async (req, res, next) 
       details: `Deleted product ${name}`,
     });
     res.json({ success: true, id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Ratings & feedback — the Inputs half of the marketplace feature.
+ *
+ *   POST /api/products/:id/rating    any signed-in user, one per product
+ *   GET  /api/products/:id/ratings   public — reviews, newest first
+ *
+ * Declared after the CRUD block: `/:id/rating` and `/:id/ratings` are two
+ * path segments, so they can never be swallowed by the one-segment `GET
+ * /:id` above. Reads reuse that route's visibility rule (active product, or
+ * the owner's own row, or admin) so reviews never leak a delisted item, and
+ * the write requires only a session — no purchase gate (Option A) — because
+ * the order history check would add a query per rating to protect nothing
+ * that matters more than the one-per-user limit already enforced here.
+ */
+router.get("/:id/ratings", optionalAuth, async (req, res, next) => {
+  try {
+    const doc = await Product.findById(req.params.id);
+    if (!doc) throw httpError("Product not found", 404);
+
+    const visible =
+      isAdmin(req.user) ||
+      !!doc.isActive ||
+      (req.user && supplierIdOf(doc) === String(req.user.id));
+    if (!visible) throw httpError("Product not found", 404);
+
+    const ratings = (Array.isArray(doc.ratings) ? doc.ratings : [])
+      .map((r) => ({
+        rating: r.rating,
+        comment: r.comment,
+        userName: r.userName || "",
+        userId: String(r.userId || ""),
+        createdAt: r.createdAt,
+      }))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(ratings);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/rating", auth, async (req, res, next) => {
+  try {
+    const doc = await Product.findById(req.params.id)
+      .select("name isActive supplier ratings")
+      .lean();
+    if (!doc) throw httpError("Product not found", 404);
+
+    const visible =
+      isAdmin(req.user) ||
+      !!doc.isActive ||
+      supplierIdOf(doc) === String(req.user.id);
+    if (!visible) throw httpError("Product not found", 404);
+
+    const userId = String(req.user.id);
+    if ((doc.ratings || []).some((r) => String(r.userId) === userId)) {
+      throw httpError("You have already rated this product", 400);
+    }
+
+    const { rating, comment } = validateRating(req.body);
+    const entry = {
+      rating,
+      comment,
+      userId,
+      userName: req.user.name || req.user.email || "User",
+      createdAt: new Date(),
+    };
+
+    // Conditional atomic write rather than `doc.save()`: save() revalidates
+    // *every* path, so a product carrying fields that predate a schema
+    // constraint (e.g. seeded rows with a null supplier) could not be rated
+    // at all — the failure this replaced. Repeating the duplicate check and
+    // the visibility rule inside the query also closes the race where two
+    // concurrent submissions both pass the pre-read, and the aggregation
+    // pipeline recomputes the denormalised summary from the array itself.
+    const condition = { _id: req.params.id, "ratings.userId": { $ne: userId } };
+    if (!isAdmin(req.user)) {
+      condition.$or = [{ isActive: true }, { supplier: req.user.id }];
+    }
+
+    const result = await Product.updateOne(condition, [
+      // Stage 1 appends via $concatArrays (a pipeline stage — $push is an
+      // update *operator* and is not allowed here). $ifNull keeps legacy
+      // documents that predate the ratings path readable.
+      {
+        $set: {
+          ratings: {
+            $concatArrays: [{ $ifNull: ["$ratings", []] }, [entry]],
+          },
+        },
+      },
+      // Stage 2 recomputes the summary from the just-appended array; it must
+      // be a separate stage because expressions inside one stage all read the
+      // pre-stage document.
+      {
+        $set: {
+          totalRatings: { $size: "$ratings" },
+          averageRating: { $round: [{ $avg: "$ratings.rating" }, 1] },
+        },
+      },
+    ]);
+
+    if (result.matchedCount === 0) {
+      // Re-read to report precisely: a lost race (already rated), the product
+      // was delisted, or it changed hands between the pre-check and the write.
+      const again = await Product.findById(req.params.id)
+        .select("name isActive supplier ratings")
+        .lean();
+      if (!again) throw httpError("Product not found", 404);
+      const stillVisible =
+        isAdmin(req.user) ||
+        !!again.isActive ||
+        supplierIdOf(again) === userId;
+      if (!stillVisible) throw httpError("Product not found", 404);
+      if ((again.ratings || []).some((r) => String(r.userId) === userId)) {
+        throw httpError("You have already rated this product", 400);
+      }
+      throw httpError("Product not found", 404);
+    }
+
+    const fresh = await Product.findById(req.params.id)
+      .select("name averageRating totalRatings")
+      .lean();
+    const averageRating = Number(fresh && fresh.averageRating) || 0;
+    const totalRatings = Number(fresh && fresh.totalRatings) || 0;
+
+    await logAudit({
+      req,
+      action: "RATE",
+      entity: "Product",
+      entityId: String(req.params.id),
+      details: `Rated product ${fresh ? fresh.name : ""} (${averageRating}★ avg, ${totalRatings} rating(s))`,
+    });
+
+    res.json({ success: true, averageRating, totalRatings });
   } catch (err) {
     next(err);
   }

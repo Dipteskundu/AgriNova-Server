@@ -72,6 +72,22 @@ const marketplaceListingSchema = new mongoose.Schema(
      * second request can never be raised for a lot already in the queue.
      */
     inspectionRequestedAt: { type: String, default: "" },
+
+    // ── ratings & feedback (additive) ─────────────────────────
+    // Server-owned: written only by `POST /api/marketplace/listings/:id/rating`,
+    // never by create/update — the service strips them from client payloads.
+    // Defaults keep pre-existing documents readable without a migration pass.
+    averageRating: { type: Number, default: 0 },
+    totalRatings: { type: Number, default: 0 },
+    ratings: [
+      {
+        rating: { type: Number, min: 1, max: 5, required: true },
+        comment: { type: String, trim: true, required: true },
+        userId: { type: String, required: true },
+        userName: { type: String, default: "" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

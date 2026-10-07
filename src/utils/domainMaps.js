@@ -269,6 +269,11 @@ function mapSupplierProduct(doc) {
     imageUrl: doc.image || "/listing-placeholder.svg",
     isAvailable: !!doc.isActive,
     listedAt: doc.createdAt ? dateOnly(doc.createdAt) : "",
+    // Ratings summary — server-owned, recomputed on every rating submission.
+    // `Number(...) || 0` so documents written before these fields existed
+    // read as 0 rather than `undefined`.
+    averageRating: Number(doc.averageRating) || 0,
+    totalRatings: Number(doc.totalRatings) || 0,
   };
 }
 

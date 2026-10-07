@@ -149,6 +149,11 @@ async function createListing(user, payload = {}) {
   const loc = user.primaryLocation || {};
   const place = [loc.village, loc.upazila, loc.district].filter(Boolean).join(", ");
 
+  // Ratings are server-owned — a create must not seed a fake 5-star average.
+  delete payload.ratings;
+  delete payload.averageRating;
+  delete payload.totalRatings;
+
   const doc = await MarketplaceListing.create({
     ...payload,
     owner: user.id,
@@ -189,9 +194,13 @@ async function updateListing(id, user, payload = {}) {
     }
   }
 
-  // Never let an update reassign ownership or touch internal ids.
+  // Never let an update reassign ownership, touch internal ids, or forge the
+  // rating fields — those are recomputed only by `submitListingRating`.
   delete payload.owner;
   delete payload._id;
+  delete payload.ratings;
+  delete payload.averageRating;
+  delete payload.totalRatings;
 
   // Approving is the one transition a report unlocks. `status` reaching
   // "Approved" from anyone but a god-mode caller already required the admin
@@ -289,6 +298,122 @@ async function marketplaceStats() {
   return { totalListings: total, approvedListings: approved, pendingReview: pending };
 }
 
+/**
+ * Submit a rating + comment for a listing.
+ *
+ * Ratings describe the *public* catalogue, so only an `Approved` lot accepts
+ * one — a pending or flagged listing 404s exactly as it does on the detail
+ * endpoint, and the caller cannot probe for it. Any signed-in user may rate
+ * (Option A: no purchase gate); one rating per user per listing.
+ *
+ * The write is a conditional atomic update rather than `doc.save()`:
+ *
+ * - `save()` revalidates *every* path on the document, so a listing carrying
+ *   legacy fields that predate a schema constraint cannot be rated at all
+ *   (the exact failure this replaced on seeded data).
+ * - Repeating `"ratings.userId": { $ne }` inside the query closes the window
+ *   where two concurrent submissions both pass the pre-read duplicate check.
+ * - The aggregation pipeline recomputes the denormalised summary from the
+ *   array itself, so the browse grid never has to recompute per row and the
+ *   counters can never drift from the array that produced them.
+ */
+async function submitListingRating(user, listingId, { rating, comment }) {
+  const doc = await MarketplaceListing.findById(listingId)
+    .select("status ratings")
+    .lean();
+  if (!doc || String(doc.status) !== PUBLIC_STATUS) {
+    throw httpError("Listing not found", 404);
+  }
+
+  const userId = String(user.id);
+  if ((doc.ratings || []).some((r) => String(r.userId) === userId)) {
+    throw httpError("You have already rated this listing", 400);
+  }
+
+  const entry = {
+    rating,
+    comment,
+    userId,
+    userName: user.name || user.email || "User",
+    createdAt: new Date(),
+  };
+
+  const result = await MarketplaceListing.updateOne(
+    { _id: listingId, status: PUBLIC_STATUS, "ratings.userId": { $ne: userId } },
+    [
+      // Stage 1 appends via $concatArrays (a pipeline stage — $push is an
+      // update *operator* and is not allowed here). $ifNull keeps legacy
+      // documents that predate the ratings path readable.
+      {
+        $set: {
+          ratings: {
+            $concatArrays: [{ $ifNull: ["$ratings", []] }, [entry]],
+          },
+        },
+      },
+      // Stage 2 recomputes the denormalised summary from the just-appended
+      // array; it must be a separate stage because expressions inside one
+      // stage all read the pre-stage document.
+      {
+        $set: {
+          totalRatings: { $size: "$ratings" },
+          averageRating: { $round: [{ $avg: "$ratings.rating" }, 1] },
+        },
+      },
+    ]
+  );
+
+  if (result.matchedCount === 0) {
+    // Re-read to report precisely: a lost race (already rated) or the lot
+    // left `Approved` between the pre-check and the write.
+    const again = await MarketplaceListing.findById(listingId)
+      .select("status ratings")
+      .lean();
+    if (!again || String(again.status) !== PUBLIC_STATUS) {
+      throw httpError("Listing not found", 404);
+    }
+    if ((again.ratings || []).some((r) => String(r.userId) === userId)) {
+      throw httpError("You have already rated this listing", 400);
+    }
+    throw httpError("Listing not found", 404);
+  }
+
+  const fresh = await MarketplaceListing.findById(listingId)
+    .select("averageRating totalRatings")
+    .lean();
+
+  return {
+    success: true,
+    averageRating: Number(fresh && fresh.averageRating) || 0,
+    totalRatings: Number(fresh && fresh.totalRatings) || 0,
+  };
+}
+
+/**
+ * All ratings for a listing, newest first — public alongside the listing
+ * itself (same visibility rule as `getListing`, so an owner can still read
+ * reviews of their own un-published lot without the public seeing it).
+ */
+async function getListingRatings(listingId, user) {
+  const doc = await MarketplaceListing.findById(listingId).lean();
+  if (!doc) throw httpError("Listing not found", 404);
+
+  const isOwner = !!user && doc.owner && String(doc.owner) === String(user.id);
+  if (!isOwner && !isAdmin(user) && String(doc.status) !== PUBLIC_STATUS) {
+    throw httpError("Listing not found", 404);
+  }
+
+  return (Array.isArray(doc.ratings) ? doc.ratings : [])
+    .map((r) => ({
+      rating: r.rating,
+      comment: r.comment,
+      userName: r.userName || "",
+      userId: String(r.userId || ""),
+      createdAt: r.createdAt,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
 module.exports = {
   listListings,
   getListing,
@@ -301,4 +426,6 @@ module.exports = {
   listSaved,
   saveListing,
   unsaveListing,
+  submitListingRating,
+  getListingRatings,
 };
