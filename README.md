@@ -42,6 +42,21 @@ JWT_EXPIRE=30d
 # Frontend URL
 FRONTEND_URL=http://localhost:3000
 
+# Absolute origin of this API (used for uploaded-photo URLs in local-disk
+# fallback mode; set to https://<project>.vercel.app on Vercel)
+PUBLIC_API_URL=
+
+# Cloudinary (photo uploads) - when all three are set, produce photos are
+# uploaded to Cloudinary instead of the local `uploads/` directory.
+# Required on Vercel (read-only filesystem).
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# Cron secret for the hourly escrow auto-release
+# (GET /api/orders/escrow/cron, scheduled by vercel.json "crons")
+CRON_SECRET=
+
 # External Services (optional)
 WEATHER_API_KEY=your_weather_api_key
 PAYMENT_GATEWAY_KEY=your_payment_gateway_key
@@ -52,12 +67,15 @@ CLOUD_STORAGE_BUCKET=your_cloud_storage_bucket
 ## Available Scripts
 
 ```bash
-npm run dev      # Start development server with nodemon
-npm run start    # Start production server
+npm run dev      # Start development server with nodemon (runs `server.js`)
+npm run start    # Start production server (node src/server.js)
 npm run db:start # Start local MongoDB (portable server in <workspace>/.mongo)
 npm run seed     # Seed database with initial data
 npm run lint     # Run ESLint
 ```
+
+`nodemon server.js` also works directly — the root `server.js` delegates to
+`src/server.js`, so both entrypoints behave identically.
 
 ## Project Structure
 
@@ -242,6 +260,45 @@ Status codes:
 - `403` - Forbidden
 - `404` - Not Found
 - `500` - Server Error
+
+## Deploying to Vercel
+
+The backend deploys as a single serverless Express function:
+
+- `api/index.js` — serverless entrypoint; loads `.env` and re-exports `src/app`.
+  `src/app.js` never calls `listen()`, so Vercel wraps it directly.
+- `vercel.json` — rewrites every `/api/*` path to the function, raises the
+  function timeout to 60s, schedules the hourly escrow cron, and sets
+  `devCommand` so `vercel dev` starts the app with `nodemon server.js`.
+- `src/server.js` (and the `nodemon server.js` wrapper) remain the local
+  entrypoints — they are not used by the hosted deployment.
+
+### Required environment variables (Project → Settings → Environment Variables)
+
+| Variable | Purpose |
+|---|---|
+| `MONGODB_URI` | MongoDB Atlas connection string (local Mongo is unreachable from Vercel) |
+| `JWT_SECRET` / `JWT_EXPIRE` | Token signing (tokens get no expiry if `JWT_EXPIRE` is missing) |
+| `NODE_ENV` | `production` |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | Photo uploads (serverless filesystem is read-only) |
+| `CRON_SECRET` | Authenticates `GET /api/orders/escrow/cron` (Vercel Cron sends it as `Bearer $CRON_SECRET`) |
+| `PUBLIC_API_URL` | Optional; only used by the local-disk upload fallback |
+
+### Deploy
+
+```bash
+vercel login
+vercel link          # create/link the project
+vercel --prod
+```
+
+Local equivalent of the hosted behavior:
+
+```bash
+vercel dev           # runs `nodemon server.js` via vercel.json devCommand
+# or simply:
+npm run dev          # nodemon server.js
+```
 
 ## Learn More
 

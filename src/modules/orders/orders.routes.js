@@ -543,6 +543,29 @@ async function releaseDue(req, res, next) {
   }
 }
 
+/**
+ * GET /api/orders/escrow/cron
+ *
+ * Vercel Cron entry point (hourly — the same cadence as `startEscrowSweeper`
+ * in `src/server.js`, which never runs on a serverless deployment). Cron
+ * invocations are GETs carrying `Authorization: Bearer ${CRON_SECRET}`; the
+ * handler runs the exact function the local sweeper and the admin
+ * `POST /escrow/release-due` endpoint run — no separate logic. When no
+ * CRON_SECRET is configured it answers 404, so the route is inert outside the
+ * environment that set the secret.
+ */
+async function escrowCron(req, res, next) {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || req.get("authorization") !== `Bearer ${secret}`) {
+      return res.status(404).json({ message: "Not found" });
+    }
+    res.json(await releaseDueEscrow({ req }));
+  } catch (err) {
+    next(err);
+  }
+}
+
 const crud = buildCrudRouter({
   model: Order,
   // `supplier` sits here because the supplier portal's Orders page reuses this
@@ -582,6 +605,9 @@ const crud = buildCrudRouter({
  */
 const router = express.Router();
 router.get("/sales", auth, role(["farmer", "supplier", "admin"]), salesOrders);
+// Registered before `crud` so the cron path can never be read as a `GET /:id`
+// order lookup, and ahead of any JWT guard — it authenticates on CRON_SECRET.
+router.get("/escrow/cron", escrowCron);
 router.use(crud);
 
 /**
