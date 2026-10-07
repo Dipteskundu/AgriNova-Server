@@ -58,6 +58,23 @@ const productSchema = new mongoose.Schema(
       default: 1,
       min: 0,
     },
+
+    // ── ratings & feedback (additive) ─────────────────────────
+    // Server-owned: written only by `POST /api/products/:id/rating`, never by
+    // create/update — `validateProduct` builds its payload from a fixed key
+    // list, so a client cannot smuggle these in. Defaults keep pre-existing
+    // documents readable without a migration pass.
+    averageRating: { type: Number, default: 0 },
+    totalRatings: { type: Number, default: 0 },
+    ratings: [
+      {
+        rating: { type: Number, min: 1, max: 5, required: true },
+        comment: { type: String, trim: true, required: true },
+        userId: { type: String, required: true },
+        userName: { type: String, default: "" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

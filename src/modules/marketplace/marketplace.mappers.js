@@ -149,6 +149,13 @@ function mapListing(doc) {
     totalSoldKg: num(doc.totalSoldKg),
     listedAt: str(doc.listedDate) || dateOnly(doc.createdAt),
 
+    // Ratings summary — server-owned, recomputed on every rating submission.
+    // `num()` so documents written before these fields existed read as 0
+    // rather than `undefined` (list/detail both run under `.lean()`, where
+    // mongoose never applies schema defaults).
+    averageRating: num(doc.averageRating),
+    totalRatings: num(doc.totalRatings),
+
     // Manage-view extras (not part of ProduceListing, ignored by browse UI)
     status: str(doc.status, "Pending Review"),
     harvestLot: doc.harvestLot ? String(doc.harvestLot) : "",

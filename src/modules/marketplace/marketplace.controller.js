@@ -96,6 +96,32 @@ exports.unsave = handle(async (req) => {
 });
 
 /**
+ * Ratings — any signed-in user, one per listing.
+ *
+ * `rate` is audited because it changes what every future visitor sees about
+ * the lot; `ratings` is not, mirroring the saved-shelf rule: reads and easily
+ * reversed opinions stay out of the audit trail so business events remain
+ * legible.
+ */
+exports.rate = handle(async (req) => {
+  throwIfInvalid(req);
+  const result = await service.submitListingRating(req.user, req.params.id, req.body || {});
+  await logAudit({
+    req,
+    action: "RATE",
+    entity: "MarketplaceListing",
+    entityId: req.params.id,
+    details: `Rated listing (${result.averageRating}★ avg, ${result.totalRatings} rating(s))`,
+  });
+  return result;
+});
+
+exports.ratings = handle(async (req) => {
+  throwIfInvalid(req);
+  return service.getListingRatings(req.params.id, req.user);
+});
+
+/**
  * Persist a produce photo and hand back the URL to store in `imageUrl`.
  *
  * The URL is absolute because the frontend serves pages from a different

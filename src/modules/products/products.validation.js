@@ -97,4 +97,36 @@ function validateProduct(body, { partial = false } = {}) {
   return out;
 }
 
-module.exports = { validateProduct, UNITS };
+/**
+ * Rating submission — whole numbers 1–5 (no half stars) plus a comment.
+ *
+ * Same hand-written style as `validateProduct` for the same reason: the
+ * rating routes are plain handlers with no `crudFactory` slot to hang an
+ * `express-validator` chain off. Returns a fresh object so extra body keys
+ * never reach the mongoose payload.
+ */
+function validateRating(body) {
+  const errors = [];
+  const out = {};
+
+  const rating = Number(body?.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    errors.push("Rating must be an integer between 1 and 5");
+  } else {
+    out.rating = rating;
+  }
+
+  const comment = String(body?.comment ?? "").trim();
+  if (comment.length < 10) {
+    errors.push("Comment must be at least 10 characters");
+  } else if (comment.length > 2000) {
+    errors.push("Comment must be 2000 characters or fewer");
+  } else {
+    out.comment = comment;
+  }
+
+  if (errors.length) throw httpError(errors.join("; "));
+  return out;
+}
+
+module.exports = { validateProduct, validateRating, UNITS };

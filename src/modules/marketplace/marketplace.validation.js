@@ -143,3 +143,28 @@ exports.listListingsValidation = [
 exports.savedListingRules = [
   param("id").isMongoId().withMessage("Listing id must be a valid id"),
 ];
+
+/**
+ * Rating submission — whole numbers 1–5 (no half stars) and a comment with
+ * real content. The 10-character floor mirrors the products module so both
+ * halves of the marketplace reject the same junk.
+ *
+ * Kept as a factory-free shared pair here: unlike `listingBodyRules`, nothing
+ * derives an optional variant of these, so `chain.optional()` mutation — the
+ * bug the listing rules document warns about — cannot bite.
+ */
+exports.ratingValidation = [
+  param("id").isMongoId().withMessage("Listing id must be a valid id"),
+  body("rating")
+    .isInt({ min: 1, max: 5 })
+    .withMessage("Rating must be an integer between 1 and 5"),
+  body("comment")
+    .trim()
+    .isLength({ min: 10, max: 2000 })
+    .withMessage("Comment must be between 10 and 2000 characters"),
+];
+
+/** The read side only needs a sane path id. */
+exports.ratingIdRules = [
+  param("id").isMongoId().withMessage("Listing id must be a valid id"),
+];

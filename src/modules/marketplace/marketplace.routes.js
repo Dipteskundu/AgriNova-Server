@@ -19,6 +19,8 @@ const router = express.Router();
  *   POST   /api/marketplace/listings        farmer / supplier / admin
  *   PUT    /api/marketplace/listings/:id    owner or admin
  *   DELETE /api/marketplace/listings/:id    owner or admin
+ *   POST   /api/marketplace/listings/:id/rating   any signed-in user (1 per listing)
+ *   GET    /api/marketplace/listings/:id/ratings  public — reviews, newest first
  *   GET    /api/marketplace/saved           my saved listings (any signed-in user)
  *   POST   /api/marketplace/saved/:id       heart a listing
  *   DELETE /api/marketplace/saved/:id       un-heart it (idempotent)
@@ -84,6 +86,25 @@ router.get(
 // could never be true and the seller of a pending listing got a 404 on their
 // own detail page.
 router.get("/listings/:id", optionalAuth, controller.get);
+
+/**
+ * Ratings & feedback — `auth` but deliberately no `role()`: any signed-in
+ * user may rate (one per listing), so restricting it to `buyer` would turn a
+ * visible control for farmers and suppliers into a 403. Sub-segment routes
+ * (`/:id/rating`, `/:id/ratings`) cannot collide with `GET /listings/:id`,
+ * which matches exactly one path segment.
+ */
+router.post(
+  "/listings/:id/rating",
+  auth,
+  validation.ratingValidation,
+  controller.rate
+);
+router.get(
+  "/listings/:id/ratings",
+  validation.ratingIdRules,
+  controller.ratings
+);
 
 router.post(
   "/listings",

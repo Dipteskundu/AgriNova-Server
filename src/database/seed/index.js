@@ -121,6 +121,23 @@ const seedDemoUsers = async () => {
       phone: "+1234567893",
       address: "321 Market Street, Shopping District",
     },
+    {
+      // Referenced by `inputs.data.js` (every farm input's `supplier`) and
+      // `marketplace.data.js` (three listings' `ownerEmail`). Without this
+      // account both seeds fall back to *unowned* records — `supplier: null`
+      // documents that later `save()` calls reject because the path is
+      // required, breaking product edits and ratings on seeded inputs.
+      name: "Demo Supplier",
+      email: "supplier@demo.com",
+      password: "demo123",
+      role: "supplier",
+      roles: ["supplier"],
+      displayRole: "Supplier",
+      phone: "+1234567894",
+      address: "123 Warehouse Road, Industrial Area",
+      region: "National (Distribution Hub)",
+      verificationBadge: true,
+    },
   ];
 
   const platformUsers = adminSeed.initialAdminUsers.map((u) => {
