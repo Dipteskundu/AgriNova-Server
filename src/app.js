@@ -18,7 +18,14 @@ connectDB();
 // very first upload. Served from this origin so `<img src>` can use the
 // absolute URL the upload route returns.
 const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+} catch (err) {
+  // Serverless runtimes (Vercel) mount a read-only filesystem: there is no
+  // local `uploads/` to create because uploads go to Cloudinary instead.
+  // Never let a missing directory take the whole app down at import time.
+  console.warn(`uploads/ unavailable (${err.message}); local photo storage disabled.`);
+}
 app.use("/uploads", express.static(uploadDir));
 
 // Middleware
