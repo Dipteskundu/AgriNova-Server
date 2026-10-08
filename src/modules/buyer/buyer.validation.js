@@ -62,6 +62,68 @@ function checkoutRules() {
 }
 
 /**
+ * Validation for `POST /api/orders/stripe-checkout`.
+ *
+ * One Checkout Session covers the whole cart, so the body is reversed: instead
+ * of a single `listingId`/`productId` (that is the per-line `/checkout`), it
+ * carries `items: [{ listingId?, productId?, quantityKg }]`. The cross-field
+ * "exactly one of listingId/productId" per element is enforced here the same
+ * way `checkoutRules` does for a single line; prices, stock and minimums are
+ * still re-checked server-side in `resolveLineFromInput`, never by this rule
+ * set alone.
+ */
+function stripeCheckoutRules() {
+  return [
+    body("items")
+      .exists()
+      .withMessage("Cart items are required")
+      .bail()
+      .isArray({ min: 1 })
+      .withMessage("Your cart is empty"),
+
+    body("items.*.listingId")
+      .optional({ values: "falsy" })
+      .isMongoId()
+      .withMessage("Unknown listing id"),
+
+    body("items.*.productId")
+      .optional({ values: "falsy" })
+      .isMongoId()
+      .withMessage("Unknown product id"),
+
+    body("items.*.quantityKg")
+      .exists()
+      .withMessage("Quantity is required")
+      .bail()
+      .isFloat({ gt: 0 })
+      .withMessage("Quantity must be greater than zero"),
+
+    body("items")
+      .custom((items) => {
+        if (!Array.isArray(items)) return true;
+        items.forEach((item) => {
+          const hasListing = !!item?.listingId;
+          const hasProduct = !!item?.productId;
+          if (hasListing && hasProduct) {
+            throw new Error("Order one cart line at a time");
+          }
+          if (!hasListing && !hasProduct) {
+            throw new Error("Choose an item to order");
+          }
+        });
+        return true;
+      }),
+
+    body("deliveryAddress")
+      .trim()
+      .notEmpty()
+      .withMessage("A delivery address is required")
+      .isLength({ max: 240 })
+      .withMessage("Delivery address must be 240 characters or fewer"),
+  ];
+}
+
+/**
  * Dispute validation for `POST /api/orders/:id/dispute`.
  *
  * `reason` is an enum rather than free text so the admin Disputes board's
@@ -131,4 +193,4 @@ function demandRules() {
   ];
 }
 
-module.exports = { checkoutRules, disputeRules, demandRules };
+module.exports = { checkoutRules, disputeRules, demandRules, stripeCheckoutRules };

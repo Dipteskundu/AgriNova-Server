@@ -65,11 +65,26 @@ const orderSchema = new mongoose.Schema(
      */
     quantityUnits: { type: Number, default: 0 },
     unitLabel: { type: String, default: "kg" },
+
+    // ── Stripe Checkout (test mode, additive) ─────────────────
+    /**
+     * Stripe Checkout Session id tied to this order at session creation, "" on
+     * every non-Stripe order. The Stripe webhook looks orders up by this value,
+     * so it must be unique enough to never collide with another session.
+     */
+    stripeSessionId: { type: String, default: "" },
+    /**
+     * `YYYY-MM-DD` Stripe confirmed the charge — by webhook or by the
+     * authenticated return-status endpoint retrieving the Checkout Session.
+     * The frontend never trusts a success URL by itself.
+     */
+    stripePaidAt: { type: String, default: "" },
   },
   { timestamps: true }
 );
 
 orderSchema.index({ owner: 1, orderDate: -1 });
 orderSchema.index({ inputProduct: 1 });
+orderSchema.index({ stripeSessionId: 1 });
 
 module.exports = mongoose.model("Order", orderSchema);

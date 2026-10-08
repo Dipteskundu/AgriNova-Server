@@ -15,8 +15,10 @@ const { mapBuyerOrder } = require("../../utils/domainMaps");
 const { mapDispute } = require("../admin/admin.mappers");
 const { today, dateOnly } = require("../../utils/dates");
 const { logAudit } = require("../../utils/audit");
-const { checkoutRules, disputeRules } = require("../buyer/buyer.validation");
+const { checkoutRules, disputeRules, stripeCheckoutRules } = require("../buyer/buyer.validation");
 const { HELD, DISPUTED, releaseEscrow, startClock, releaseDueEscrow } = require("./escrow.service");
+const { getStripe } = require("../../config/stripe");
+const { confirmStripeSession } = require("../stripe/stripe.service");
 
 const isAdmin = (user) =>
   !!user &&
@@ -83,6 +85,16 @@ function assertCanAct(req, doc, action) {
  */
 async function resolveLine(req) {
   const { listingId, productId, quantityKg } = req.body;
+  return resolveLineFromInput({ listingId, productId, quantityKg });
+}
+
+/**
+ * The per-kind resolution behind `resolveLine`, factored out so the Stripe
+ * checkout can resolve every cart line the same way. Prices, stock ceilings
+ * and minimums are always re-read from the database here — a client-supplied
+ * price or availability is never trusted.
+ */
+async function resolveLineFromInput({ listingId, productId, quantityKg }) {
   const qty = Number(quantityKg);
 
   if (listingId && productId) {
@@ -259,6 +271,184 @@ async function checkout(req, res) {
   });
 
   res.status(201).json(mapBuyerOrder(order.toObject(), line.responseListing || null));
+}
+
+/**
+ * POST /api/orders/stripe-checkout
+ *
+ * Test-mode Stripe Checkout. Unlike `/checkout` — which simulates the payment
+ * and writes a completed payout row right away — this endpoint:
+ *
+ *   1. resolves every cart line server-side (`resolveLineFromInput` re-reads
+ *      the listing/product from the database, so prices, stock ceilings and
+ *      minimums are never taken from the client),
+ *   2. creates a real Stripe Checkout Session whose `line_items` are stamped
+ *      from those verified prices in BDT minor units (`bdt` is a two-decimal
+ *      currency, so ৳100.50 → 10050),
+ *   3. creates one Order per cart line exactly as the shared cart does, but
+ *      leaves it `paymentStatus: "pending"` and escrow-held, tied to the
+ *      session id through `Order.stripeSessionId`. Nothing is marked paid or
+ *      payout-completed until the signature-verified webhook confirms the
+ *      charge — see `src/modules/stripe/webhook.routes.js`.
+ */
+async function stripeCheckout(req, res, next) {
+  try {
+    const invalid = fail(req);
+    if (invalid) throw invalid;
+
+    const { items, deliveryAddress } = req.body || {};
+    const stripe = getStripe();
+
+    const lines = await Promise.all(
+      (Array.isArray(items) ? items : []).map((item) =>
+        resolveLineFromInput({
+          listingId: item.listingId,
+          productId: item.productId,
+          quantityKg: item.quantityKg,
+        })
+      )
+    );
+    if (!lines.length) throw httpError("Your cart is empty", 400);
+
+    // One line_item per cart line. `unit_amount` carries the WHOLE line total
+    // because produce quantities are fractional ("0.5 kg" has no integer
+    // Stripe equivalent) — quantity is pinned to 1 and the real quantity and
+    // per-unit price are spelled out in the description for the receipt.
+    const lineItems = lines.map((line) => ({
+      price_data: {
+        currency: "bdt",
+        product_data: {
+          name: line.fields.produceItem,
+          description: `${line.fields.volumeKg} ${line.fields.unitLabel} × ৳${line.unitPrice} (${line.purpose})`,
+        },
+        unit_amount: Math.round(line.unitPrice * line.fields.volumeKg * 100),
+      },
+      quantity: 1,
+    }));
+
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: lineItems,
+      success_url: `${frontendUrl}/dashboard/checkout?success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontendUrl}/dashboard/checkout?cancel=1`,
+      client_reference_id: String(req.user.id),
+      metadata: { buyerId: String(req.user.id) },
+    });
+
+    // Order rows land in the same pending/escrow state `/checkout` uses but
+    // WITHOUT the simulated completed payout — the money has not arrived yet.
+    const orders = [];
+    for (const line of lines) {
+      const orderCode = await nextOrderCode();
+      const total = Math.round(line.unitPrice * line.fields.volumeKg * 100) / 100;
+      orders.push(
+        await Order.create({
+          orderCode,
+          owner: req.user.id,
+          buyerName: req.user.name || "",
+          ...line.fields,
+          unitPriceBdt: line.unitPrice,
+          totalValueBdt: total,
+          deliveryAddress: deliveryAddress || "",
+          orderDate: today(),
+          paymentStatus: "pending",
+          escrowStatus: "Held in Escrow",
+          fulfillmentStatus: "Order Placed",
+          stripeSessionId: session.id,
+          trackingSteps: [{ label: "Order placed", date: today(), done: true }],
+        })
+      );
+    }
+
+    await logAudit({
+      req,
+      action: "CREATE",
+      entity: "Order",
+      entityId: String(orders[0]._id),
+      details: `Stripe Checkout session ${session.id}: ${orders.length} order(s) awaiting payment`,
+    });
+
+    res.status(201).json({
+      sessionId: session.id,
+      sessionUrl: session.url,
+      orders: orders.map((o) => o.orderCode),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/orders/stripe-checkout/:sessionId
+ *
+ * What the success page calls after Stripe redirects the buyer back. A signed
+ * webhook normally confirms the payment, but may be delayed or misconfigured;
+ * retrieve the Checkout Session from Stripe as a fallback before reporting
+ * the payment status. The URL parameters alone are never trusted.
+ */
+async function stripeCheckoutStatus(req, res, next) {
+  try {
+    const query = { stripeSessionId: req.params.sessionId };
+    if (!isAdmin(req.user)) query.owner = req.user.id;
+
+    let orders = await Order.find(query).select(
+      "orderCode fulfillmentStatus escrowStatus paymentStatus stripePaidAt produceItem volumeKg unitLabel unitPriceBdt totalValueBdt"
+    );
+
+    if (!orders.length) {
+      throw httpError("Checkout session not found", 404);
+    }
+
+    let confirmed = orders.some((o) => o.stripePaidAt);
+    let checkoutStatus = "open";
+
+    if (!confirmed) {
+      const session = await getStripe().checkout.sessions.retrieve(
+        req.params.sessionId
+      );
+      const isSessionOwner =
+        session.client_reference_id === String(req.user.id) ||
+        session.metadata?.buyerId === String(req.user.id);
+
+      if (!isAdmin(req.user) && !isSessionOwner) {
+        throw httpError("You do not have permission to view this checkout", 403);
+      }
+
+      checkoutStatus = session.status || "open";
+      if (session.payment_status === "paid") {
+        await confirmStripeSession(session.id);
+        orders = await Order.find(query).select(
+          "orderCode fulfillmentStatus escrowStatus paymentStatus stripePaidAt produceItem volumeKg unitLabel unitPriceBdt totalValueBdt"
+        );
+        confirmed = orders.some((o) => o.stripePaidAt);
+      }
+    }
+
+    res.json({
+      confirmed,
+      status: confirmed ? "paid" : checkoutStatus,
+      // "paid" here means the buyer's money was captured and is held in
+      // escrow — the seller-side payout stays pending until escrow releases.
+      paymentStatus: confirmed ? "paid" : "pending",
+      totalAmountBdt: orders.reduce(
+        (total, order) => total + (Number(order.totalValueBdt) || 0),
+        0
+      ),
+      orders: orders.map((o) => ({
+        orderCode: o.orderCode,
+        status: o.fulfillmentStatus,
+        escrowStatus: o.escrowStatus,
+        productName: o.produceItem,
+        quantity: Number(o.volumeKg) || 0,
+        unit: o.unitLabel || "kg",
+        unitPriceBdt: Number(o.unitPriceBdt) || 0,
+        totalAmountBdt: Number(o.totalValueBdt) || 0,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
 }
 
 /**
@@ -608,6 +798,23 @@ router.get("/sales", auth, role(["farmer", "supplier", "admin"]), salesOrders);
 // Registered before `crud` so the cron path can never be read as a `GET /:id`
 // order lookup, and ahead of any JWT guard — it authenticates on CRON_SECRET.
 router.get("/escrow/cron", escrowCron);
+// Stripe routes must also precede `router.use(crud)`: the factory registers
+// `GET /:id` inside its own router, so `/stripe-checkout/:sessionId` would
+// otherwise be parsed as an order id (and throw a CastError) — same reason
+// `/sales` sits up here.
+router.post(
+  "/stripe-checkout",
+  auth,
+  role(["buyer", "farmer", "supplier", "admin"]),
+  stripeCheckoutRules(),
+  stripeCheckout
+);
+router.get(
+  "/stripe-checkout/:sessionId",
+  auth,
+  role(["buyer", "farmer", "supplier", "admin"]),
+  stripeCheckoutStatus
+);
 router.use(crud);
 
 /**

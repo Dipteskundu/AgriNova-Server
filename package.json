@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon server.js",
+    "migrate:stripe-order-indexes": "node scripts/migrate-stripe-order-indexes.js",
     "seed": "node src/database/seed/index.js",
     "seed:marketplace": "node src/database/seed/marketplace.seed.js",
     "seed:quality": "node src/database/seed/quality.seed.js",
@@ -24,7 +25,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.7.0",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "stripe": "^23.0.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

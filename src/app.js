@@ -30,6 +30,12 @@ app.use("/uploads", express.static(uploadDir));
 
 // Middleware
 app.use(cors());
+
+// Stripe webhooks MUST run before `express.json()`: Stripe signs the raw
+// request body, and the JSON parser would have already drained it. The route
+// re-parses with `express.raw` and verifies the signature itself.
+app.use("/api/webhooks", require("./modules/stripe/webhook.routes"));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
