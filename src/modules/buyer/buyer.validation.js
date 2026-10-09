@@ -46,8 +46,22 @@ function checkoutRules() {
       .trim()
       .notEmpty()
       .withMessage("A delivery address is required")
-      .isLength({ max: 240 })
-      .withMessage("Delivery address must be 240 characters or fewer"),
+      .isLength({ min: 10, max: 240 })
+      .withMessage("Delivery address must be 10–240 characters"),
+
+    body("phone")
+      .trim()
+      .customSanitizer((v) => String(v || "").replace(/[\s-]/g, "").replace(/^(\+?88)/, ""))
+      .notEmpty()
+      .withMessage("Phone number is required")
+      .matches(/^01[3-9]\d{8}$/)
+      .withMessage("Invalid Bangladesh mobile number"),
+
+    body("notes")
+      .optional({ values: "falsy" })
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage("Notes must be 500 characters or fewer"),
 
     body("paymentMethod")
       .optional()
@@ -118,8 +132,22 @@ function stripeCheckoutRules() {
       .trim()
       .notEmpty()
       .withMessage("A delivery address is required")
-      .isLength({ max: 240 })
-      .withMessage("Delivery address must be 240 characters or fewer"),
+      .isLength({ min: 10, max: 240 })
+      .withMessage("Delivery address must be 10–240 characters"),
+
+    body("phone")
+      .trim()
+      .customSanitizer((v) => String(v || "").replace(/[\s-]/g, "").replace(/^(\+?88)/, ""))
+      .notEmpty()
+      .withMessage("Phone number is required")
+      .matches(/^01[3-9]\d{8}$/)
+      .withMessage("Invalid Bangladesh mobile number"),
+
+    body("notes")
+      .optional({ values: "falsy" })
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage("Notes must be 500 characters or fewer"),
   ];
 }
 

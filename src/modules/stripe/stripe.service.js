@@ -2,6 +2,7 @@ const Order = require("../../database/models/Order");
 const Payment = require("../../database/models/Payment");
 const { today } = require("../../utils/dates");
 const { logAudit } = require("../../utils/audit");
+const { ensureDeliveryForOrder } = require("../deliveries/delivery.service");
 
 /**
  * Apply a verified Stripe payment to its orders. Safe to call from both the
@@ -11,6 +12,7 @@ async function confirmStripeSession(sessionId) {
   const orders = await Order.find({ stripeSessionId: sessionId });
 
   for (const doc of orders) {
+    await ensureDeliveryForOrder(doc);
     if (doc.stripePaidAt) continue;
 
     const replayed = await Payment.findOne({

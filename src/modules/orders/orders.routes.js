@@ -8,6 +8,10 @@ const Payment = require("../../database/models/Payment");
 const Product = require("../../database/models/Product");
 const MarketplaceListing = require("../../database/models/MarketplaceListing");
 const Dispute = require("../../database/models/Dispute");
+const {
+  ensureDeliveryForOrder,
+  updateDeliveryStatus,
+} = require("../deliveries/delivery.service");
 const { mapBuyerOrder } = require("../../utils/domainMaps");
 // The dispute payload is shared with the admin board on purpose: one mapper
 // means the buyer's read-only page and the tribunal's board can never drift
@@ -218,7 +222,7 @@ async function checkout(req, res) {
   const invalid = fail(req);
   if (invalid) throw invalid;
 
-  const { deliveryAddress, paymentMethod, estimatedDelivery } = req.body;
+  const { deliveryAddress, paymentMethod, estimatedDelivery, phone, notes } = req.body;
   const qty = Number(req.body.quantityKg);
   const line = await resolveLine(req);
 
@@ -234,6 +238,8 @@ async function checkout(req, res) {
     unitPriceBdt: line.unitPrice,
     totalValueBdt: total,
     deliveryAddress,
+    phone: phone ? String(phone) : "",
+    notes: notes ? String(notes) : "",
     estimatedDelivery: estimatedDelivery ? dateOnly(estimatedDelivery) : "",
     orderDate: today(),
     paymentStatus: "pending",
@@ -241,6 +247,7 @@ async function checkout(req, res) {
     fulfillmentStatus: "Order Placed",
     trackingSteps: [{ label: "Order placed", date: today(), done: true }],
   });
+  const delivery = await ensureDeliveryForOrder(order);
 
   // V1: payment is simulated, but recorded so the buyer's payment history,
   // the order's escrow state and the amount all agree.
@@ -270,7 +277,9 @@ async function checkout(req, res) {
     details: `Checkout ${orderCode}: ${qty} ${line.fields.unitLabel} of ${line.fields.produceItem}`,
   });
 
-  res.status(201).json(mapBuyerOrder(order.toObject(), line.responseListing || null));
+  res.status(201).json(
+    mapBuyerOrder(order.toObject(), line.responseListing || null, delivery)
+  );
 }
 
 /**
@@ -296,7 +305,7 @@ async function stripeCheckout(req, res, next) {
     const invalid = fail(req);
     if (invalid) throw invalid;
 
-    const { items, deliveryAddress } = req.body || {};
+    const { items, deliveryAddress, phone, notes } = req.body || {};
     const stripe = getStripe();
 
     const lines = await Promise.all(
@@ -333,7 +342,7 @@ async function stripeCheckout(req, res, next) {
       success_url: `${frontendUrl}/dashboard/checkout?success=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/dashboard/checkout?cancel=1`,
       client_reference_id: String(req.user.id),
-      metadata: { buyerId: String(req.user.id) },
+      metadata: { buyerId: String(req.user.id), phone: String(phone || ""), notes: String(notes || ""), deliveryAddress: String(deliveryAddress || "") },
     });
 
     // Order rows land in the same pending/escrow state `/checkout` uses but
@@ -351,6 +360,8 @@ async function stripeCheckout(req, res, next) {
           unitPriceBdt: line.unitPrice,
           totalValueBdt: total,
           deliveryAddress: deliveryAddress || "",
+          phone: phone ? String(phone) : "",
+          notes: notes ? String(notes) : "",
           orderDate: today(),
           paymentStatus: "pending",
           escrowStatus: "Held in Escrow",
@@ -359,6 +370,7 @@ async function stripeCheckout(req, res, next) {
           trackingSteps: [{ label: "Order placed", date: today(), done: true }],
         })
       );
+      await ensureDeliveryForOrder(orders[orders.length - 1]);
     }
 
     await logAudit({
@@ -605,12 +617,23 @@ async function receiptOrder(req, res, next) {
       );
     }
 
-    doc.fulfillmentStatus = "Delivered";
-    doc.deliveredAt = today();
+    const delivery = await ensureDeliveryForOrder(doc);
+    if (delivery.status !== "Delivered") {
+      await updateDeliveryStatus(
+        String(delivery._id),
+        "Delivered",
+        "Receipt confirmed by buyer"
+      );
+    }
+    const updatedOrder = await Order.findById(doc._id)
+      .populate("listing")
+      .populate("delivery");
 
-    await releaseEscrow(doc, { req, reason: "buyer confirmed receipt" });
+    await releaseEscrow(updatedOrder, { req, reason: "buyer confirmed receipt" });
 
-    res.json(mapBuyerOrder(doc.toObject(), doc.listing));
+    res.json(
+      mapBuyerOrder(updatedOrder.toObject(), updatedOrder.listing, updatedOrder.delivery)
+    );
   } catch (err) {
     next(err);
   }
@@ -633,7 +656,9 @@ async function disputeOrder(req, res, next) {
     const invalid = fail(req);
     if (invalid) throw invalid;
 
-    const doc = await Order.findById(req.params.id).populate("listing");
+    const doc = await Order.findById(req.params.id)
+      .populate("listing")
+      .populate("delivery");
     if (!doc) throw httpError("Order not found", 404);
     assertCanAct(req, doc, "dispute");
 
@@ -687,7 +712,7 @@ async function disputeOrder(req, res, next) {
       details: `Dispute opened on ${doc.orderCode} for ৳${doc.totalValueBdt}`,
     });
 
-    res.status(201).json(mapBuyerOrder(doc.toObject(), doc.listing));
+    res.status(201).json(mapBuyerOrder(doc.toObject(), doc.listing, doc.delivery));
   } catch (err) {
     next(err);
   }
@@ -764,8 +789,8 @@ const crud = buildCrudRouter({
   // to rows they created, so widening the list never exposes anyone else's.
   roles: ["buyer", "farmer", "supplier", "admin"],
   ownerKey: "owner",
-  populate: ["listing"],
-  map: (doc) => mapBuyerOrder(doc, doc.listing),
+  populate: ["listing", "delivery"],
+  map: (doc) => mapBuyerOrder(doc, doc.listing, doc.delivery),
   sort: { createdAt: -1, _id: -1 },
   auditName: "Order",
   // Buyers are read-only on orders: lifecycle is driven by the farmer/admin
@@ -832,19 +857,26 @@ router.put(
       if (!doc) throw httpError("Order not found", 404);
 
       const body = req.body || {};
+      if (
+        ["fulfillmentStatus", "deliveredAt", "trackingSteps"].some(
+          (key) => body[key] !== undefined && body[key] !== null
+        )
+      ) {
+        throw httpError(
+          "Delivery progress must be updated through the delivery status endpoint",
+          400
+        );
+      }
       const clean = {};
       [
-        "fulfillmentStatus",
         "escrowStatus",
         "logisticsPartner",
         "estimatedDelivery",
-        "deliveredAt",
         "paymentStatus",
         "buyerName",
         "farmerName",
         "produceItem",
         "deliveryAddress",
-        "trackingSteps",
       ].forEach((key) => {
         if (body[key] !== undefined && body[key] !== null) clean[key] = body[key];
       });
@@ -867,7 +899,7 @@ router.put(
         details: `Updated ${doc.orderCode}`,
       });
 
-      res.json(mapBuyerOrder(doc.toObject(), doc.listing));
+      res.json(mapBuyerOrder(doc.toObject(), doc.listing, doc.delivery));
     } catch (err) {
       next(err);
     }

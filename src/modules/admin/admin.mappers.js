@@ -69,13 +69,13 @@ const mapQuality = (doc) => ({
 
 const mapLogistics = (doc) => ({
   id: String(doc._id),
-  consignmentCode: doc.consignmentCode || "",
+  consignmentCode: doc.consignmentNo || doc.consignmentCode || "",
   originHub: doc.originHub || "",
   destinationDepot: doc.destinationDepot || "",
   cargoDescription: doc.cargoDescription || "",
   cargoWeightKg: doc.cargoWeightKg || 0,
-  vehicleType: doc.vehicleType || "Open Bed Truck",
-  driverName: doc.driverName || "",
+  vehicleType: doc.vehicle || doc.vehicleType || "Open Bed Truck",
+  driverName: doc.driver || doc.driverName || "",
   driverPhone: doc.driverPhone || "",
   temperatureCelsius: doc.temperatureCelsius || 0,
   targetTempRange: doc.targetTempRange || "",

@@ -39,6 +39,8 @@ const orderSchema = new mongoose.Schema(
     farmerPhone: { type: String, default: "" },
     unitPriceBdt: { type: Number, default: 0 },
     deliveryAddress: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    notes: { type: String, default: "" },
     estimatedDelivery: { type: String, default: "" },
     deliveredAt: { type: String, default: "" },
     paymentStatus: { type: String, default: "pending" },
@@ -82,6 +84,13 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+orderSchema.virtual("delivery", {
+  ref: "Delivery",
+  localField: "_id",
+  foreignField: "order",
+  justOne: true,
+});
 
 orderSchema.index({ owner: 1, orderDate: -1 });
 orderSchema.index({ inputProduct: 1 });

@@ -81,7 +81,7 @@ function buildTrackingSteps(doc, status) {
 }
 
 /** DB `Order` → the frontend's `BuyerOrder`. */
-function mapBuyerOrder(doc, populatedListing) {
+function mapBuyerOrder(doc, populatedListing, populatedDelivery) {
   const listing = populatedListing && populatedListing._id ? populatedListing : null;
   const status = toOrderStatus(doc.fulfillmentStatus);
 
@@ -128,6 +128,20 @@ function mapBuyerOrder(doc, populatedListing) {
     placedAt: doc.orderDate || dateOnly(doc.createdAt),
     deliveryAddress: doc.deliveryAddress || "",
     estimatedDelivery: doc.estimatedDelivery || "",
+    delivery: populatedDelivery && status !== "cancelled"
+      ? {
+          consignmentNo:
+            populatedDelivery.consignmentNo || populatedDelivery.consignmentCode || "",
+          vehicle: populatedDelivery.vehicle || populatedDelivery.vehicleType || "",
+          driverName: populatedDelivery.driver || populatedDelivery.driverName || "",
+          status: populatedDelivery.status || "Pending",
+          events: (populatedDelivery.events || []).map((event) => ({
+            status: String(event.status || ""),
+            note: String(event.note || ""),
+            at: String(event.at || ""),
+          })),
+        }
+      : null,
     ...(doc.deliveredAt ? { deliveredAt: doc.deliveredAt } : {}),
     trackingSteps: buildTrackingSteps(doc, status),
   };
@@ -188,19 +202,41 @@ function mapBuyerDemand(doc, buyerName) {
 
 /** DB `Delivery` → buyer-facing shipment summary. */
 function mapBuyerDelivery(doc) {
+  const order = doc.order || {};
+  const status = {
+    Pending: "assigned",
+    "Picked up": "picked_up",
+    "In transit": "in_transit",
+    "Out for delivery": "out_for_delivery",
+    Delivered: "delivered",
+  }[doc.status] || "assigned";
+
   return {
     id: String(doc._id),
-    consignmentCode: doc.consignmentCode || "",
+    consignmentCode: doc.consignmentNo || doc.consignmentCode || "",
     orderCode: doc.orderCode || "",
     originHub: doc.originHub || "",
     destinationDepot: doc.destinationDepot || "",
     cargoDescription: doc.cargoDescription || "",
     cargoWeightKg: Number(doc.cargoWeightKg) || 0,
-    vehicleType: doc.vehicleType || "",
-    driverName: doc.driverName || "",
-    driverPhone: doc.driverPhone || "",
+    vehicleType: doc.vehicle || doc.vehicleType || "",
+    driverName: doc.driver || doc.driverName || "",
+    status,
+    farmerName: order.farmerName || "",
+    pickupAddress: doc.originHub || "",
+    buyerName: order.buyerName || "",
+    deliveryAddress: order.deliveryAddress || doc.destinationDepot || "",
+    scheduledPickup: doc.createdAt || "",
+    estimatedDelivery: order.estimatedDelivery || doc.estimatedArrival || "",
+    actualDelivery: order.deliveredAt || "",
+    specialInstructions: "",
+    events: (doc.events || []).map((event) => ({
+      status: String(event.status || ""),
+      note: String(event.note || ""),
+      at: String(event.at || ""),
+    })),
     transitStatus: doc.transitStatus || "",
-    estimatedArrival: doc.estimatedArrival || "",
+    estimatedArrival: order.estimatedDelivery || doc.estimatedArrival || "",
     coldChainIntegrity: doc.coldChainIntegrity || "",
   };
 }

@@ -13,6 +13,23 @@ const mongoose = require("mongoose");
  */
 const logisticsSchema = new mongoose.Schema(
   {
+    order: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      required: true,
+    },
+    consignmentNo: { type: String, default: "", trim: true },
+    vehicle: { type: String, default: "", trim: true },
+    driver: { type: String, default: "", trim: true },
+    status: {
+      type: String,
+      enum: ["Pending", "Picked up", "In transit", "Out for delivery", "Delivered"],
+      default: "Pending",
+    },
+    events: {
+      type: [{ status: String, note: { type: String, default: "" }, at: String }],
+      default: [],
+    },
     consignmentCode: { type: String, required: [true, "Please add a consignment code"], trim: true },
     originHub: { type: String, default: "" },
     destinationDepot: { type: String, default: "" },
@@ -34,6 +51,10 @@ const logisticsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+logisticsSchema.index(
+  { order: 1 },
+  { unique: true, partialFilterExpression: { order: { $type: "objectId" } } }
+);
 logisticsSchema.index({ owner: 1, transitStatus: 1 });
 
 module.exports = mongoose.model("Delivery", logisticsSchema);
