@@ -123,7 +123,7 @@ router.get("/dashboard", async (req, res, next) => {
       CropLog.find({ owner }).sort({ createdAt: -1, _id: -1 }).limit(4).lean(),
       CalendarTask.find({ owner, isCompleted: false }).sort({ scheduledDate: 1 }).limit(4).lean(),
       Notification.countDocuments({ owner, isRead: false }),
-      buildWeatherData(),
+      buildWeatherData({ district: req.user.primaryLocation?.district, lat: req.user.primaryLocation?.lat, lng: req.user.primaryLocation?.lng }),
     ]);
 
     const farmsList = await Farm.find({ owner }).lean();
@@ -255,7 +255,7 @@ router.get("/profitability", async (req, res, next) => {
 
 router.get("/weather", async (req, res, next) => {
   try {
-    res.json(await buildWeatherData());
+    res.json(await buildWeatherData({ district: req.user.primaryLocation?.district, lat: req.user.primaryLocation?.lat, lng: req.user.primaryLocation?.lng }));
   } catch (err) {
     next(err);
   }
@@ -263,7 +263,11 @@ router.get("/weather", async (req, res, next) => {
 
 router.post("/crops/recommend", async (req, res, next) => {
   try {
-    res.json(await cropAdvisory.buildRecommendations(req.body || {}));
+
+    res.json(
+      await cropAdvisory.buildRecommendations(req.body || {}, req.user)
+    );
+
   } catch (err) {
     next(err);
   }
@@ -271,7 +275,7 @@ router.post("/crops/recommend", async (req, res, next) => {
 
 router.get("/crops/compare", async (req, res, next) => {
   try {
-    res.json(await cropAdvisory.buildComparisonProfiles());
+    res.json(await cropAdvisory.buildComparisonProfiles(req.user));
   } catch (err) {
     next(err);
   }
