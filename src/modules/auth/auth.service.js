@@ -1,24 +1,16 @@
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const crypto = require("node:crypto");
 const User = require("../../database/models/User");
+const { getFirebaseAuth } = require("../../config/firebaseAdmin");
 
-const httpError = (message, statusCode) => {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  return error;
-};
+const ALLOWED_ROLES = new Set(["farmer", "buyer", "supplier"]);
+const httpError = (message, statusCode) => Object.assign(new Error(message), { statusCode });
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE,
-  });
-};
+const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 
-// Helper to format user response with both role and roles
 const formatUserResponse = (user, token) => {
-  const roles = Array.isArray(user.roles) && user.roles.length > 0
-    ? user.roles
-    : [user.role || "farmer"];
-
+  const roles = Array.isArray(user.roles) && user.roles.length ? user.roles : [user.role || "farmer"];
   return {
     token,
     user: {
@@ -26,94 +18,84 @@ const formatUserResponse = (user, token) => {
       name: user.name,
       email: user.email,
       role: user.role || roles[0],
-      roles: roles,
+      roles,
       phone: user.phone || "",
       address: user.address || "",
-      profileImage: user.profileImage || ""
-    }
+      profileImage: user.profileImage || "",
+    },
   };
 };
 
 exports.register = async (userData) => {
   const { name, email, password, role, phone, roles } = userData;
-
-  const existingUser = await User.findOne({ email });
-  if (existingUser) {
-    throw httpError("User already exists", 409);
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const requestedRoles = roles === undefined ? [role || "farmer"] : roles;
+  if (!normalizedEmail || typeof name !== "string" || !name.trim() || typeof password !== "string" || password.length < 6) {
+    throw httpError("Name, valid email, and a password of at least 6 characters are required", 400);
   }
-
-  const userRoles = roles && roles.length > 0 ? roles : [role || "farmer"];
-
-  const user = await User.create({
-    name,
-    email,
-    password,
-    role: role || "farmer",
-    roles: userRoles,
-    phone,
-  });
-
-  const token = generateToken(user._id);
-
-  return formatUserResponse(user, token);
+  if (!Array.isArray(requestedRoles) || requestedRoles.length === 0 || requestedRoles.some((item) => !ALLOWED_ROLES.has(item)) || (role && !ALLOWED_ROLES.has(role))) {
+    throw httpError("Registration role is invalid", 400);
+  }
+  const userRoles = [...new Set(requestedRoles)];
+  const existingUser = await User.findOne({ email: normalizedEmail });
+  if (existingUser) throw httpError("User already exists", 409);
+  const primaryRole = role && userRoles.includes(role) ? role : userRoles[0];
+  const user = await User.create({ name: name.trim(), email: normalizedEmail, password, role: primaryRole, roles: userRoles, phone });
+  return formatUserResponse(user, generateToken(user._id));
 };
 
 exports.login = async (email, password) => {
-  const user = await User.findOne({ email }).select("+password");
-
-  if (!user) {
-    throw httpError("Invalid credentials", 401);
-  }
-
-  const isMatch = await user.matchPassword(password);
-
-  if (!isMatch) {
-    throw httpError("Invalid credentials", 401);
-  }
-
-  const token = generateToken(user._id);
-
-  return formatUserResponse(user, token);
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const user = await User.findOne({ email: normalizedEmail }).select("+password");
+  if (!user || !(await user.matchPassword(password))) throw httpError("Invalid credentials", 401);
+  return formatUserResponse(user, generateToken(user._id));
 };
 
 exports.getMe = async (userId) => {
   const user = await User.findById(userId);
-  if (!user) {
-    throw httpError("User not found", 404);
-  }
-  const token = generateToken(user._id);
-  return formatUserResponse(user, token);
+  if (!user) throw httpError("User not found", 404);
+  return formatUserResponse(user, generateToken(user._id));
 };
 
-exports.socialAuth = async ({ firebaseUid, name, email, phone, role, avatarUrl }) => {
-  let user = await User.findOne({ $or: [{ firebaseUid }, { email }] });
+exports.socialAuth = async ({ idToken, roles }) => {
+  if (typeof idToken !== "string" || !idToken.trim()) throw httpError("A Firebase ID token is required", 400);
+  let identity;
+  try {
+    identity = await getFirebaseAuth().verifyIdToken(idToken, true);
+  } catch (error) {
+    if (error.statusCode === 503) throw error;
+    throw httpError("Invalid or expired social authentication token", 401);
+  }
+  const firebaseUid = identity.uid;
+  const email = typeof identity.email === "string" ? identity.email.trim().toLowerCase() : "";
+  if (!firebaseUid || !email) throw httpError("The social account must provide an email address", 401);
 
+  let user = await User.findOne({ firebaseUid });
   if (!user) {
-    const userRoles = role ? [role] : ["farmer"];
+    if (identity.email_verified !== true) throw httpError("Verify your email with the identity provider before signing in", 401);
+    user = await User.findOne({ email });
+  }
+  if (!user) {
+    const accountRoles = roles === undefined ? ["farmer"] : roles;
+    if (!Array.isArray(accountRoles) || accountRoles.length === 0 || accountRoles.some((item) => !ALLOWED_ROLES.has(item))) {
+      throw httpError("Registration role is invalid", 400);
+    }
+    const uniqueRoles = [...new Set(accountRoles)];
     user = await User.create({
-      name: name || email.split("@")[0],
+      name: identity.name || email.split("@")[0],
       email,
-      role: role || "farmer",
-      roles: userRoles,
-      phone: phone || "",
-      profileImage: avatarUrl || "",
+      role: uniqueRoles[0],
+      roles: uniqueRoles,
+      phone: "",
+      profileImage: identity.picture || "",
       firebaseUid,
-      password: require("bcryptjs").hashSync(Math.random().toString(36).slice(-10) + "Aa1!", 10),
+      password: await bcrypt.hash(`${crypto.randomUUID()}Aa1!`, 10),
     });
   } else {
-    // Update existing user with Firebase info if needed
-    if (firebaseUid && !user.firebaseUid) {
-      user.firebaseUid = firebaseUid;
-    }
-    if (avatarUrl && !user.profileImage) {
-      user.profileImage = avatarUrl;
-    }
-    if (phone && !user.phone) {
-      user.phone = phone;
-    }
+    if (user.firebaseUid && user.firebaseUid !== firebaseUid) throw httpError("This account is linked to another identity provider account", 409);
+    if (!user.firebaseUid) user.firebaseUid = firebaseUid;
+    if (identity.picture && !user.profileImage) user.profileImage = identity.picture;
     await user.save();
   }
-
-  const token = generateToken(user._id);
-  return formatUserResponse(user, token);
+  return formatUserResponse(user, generateToken(user._id));
 };
