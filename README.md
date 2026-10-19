@@ -1,6 +1,6 @@
-# AgriNova Backend
+# FarmPath Backend
 
-Node.js + Express backend for the AgriNova Smart Agriculture & Farm-to-Market Platform.
+Node.js + Express backend for the FarmPath Smart Agriculture & Farm-to-Market Platform.
 
 ## Tech Stack
 
@@ -33,7 +33,7 @@ PORT=5000
 NODE_ENV=development
 
 # MongoDB
-MONGODB_URI=mongodb://localhost:27017/agrinova
+MONGODB_URI=mongodb://localhost:27017/FarmPath
 
 # JWT
 JWT_SECRET=your_jwt_secret_here
